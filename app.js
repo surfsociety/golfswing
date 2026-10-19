@@ -48,7 +48,7 @@ for (const stage of $$('.stage')) {
   const role = stage.dataset.role;
   clips[role] = {
     role, stage, video: stage.querySelector('video'), canvas: stage.querySelector('canvas'), frame: stage.querySelector('.frame'),
-    view: 'faceon', club: 'driver', name: '', url: null, W: 0, H: 0, range: [0, 0], step: 1 / 30,
+    view: 'faceon', club: '', name: '', url: null, W: 0, H: 0, range: [0, 0], step: 1 / 30,
     rawFrames: null, frames: null, series: null, phases: null, metrics: null, turns: null,
   };
   stage.dataset.title = role === 'me' ? 'Ich' : 'Pro';
@@ -232,6 +232,7 @@ const clubSel = $('#club-select');
 for (const [k, v] of Object.entries(CLUBS)) clubSel.append(new Option(v, k));
 clubSel.addEventListener('change', e => {
   const c = cur(); c.club = e.target.value;
+  if (!c.club) return updateUI();
   updateSavedEntry(c);
   updateUI();
 });
@@ -336,15 +337,15 @@ async function refreshLatestPro() {
   latestPro = {};
   for (const e of await store.all()) {
     if (e.role !== 'pro') continue;
-    latestPro[`${e.view}|${e.club}`] ??= e;
-    latestPro[e.view] ??= e;
+    if (e.club) latestPro[`${e.view}|${e.club}`] ??= e;
   }
 }
 
 function proMetricsFor(view, club) {
   const p = clips.pro;
   if (p.metrics && p.view === view && p.club === club) return p.metrics;
-  return (latestPro[`${view}|${club}`] || latestPro[view])?.metrics || null;
+  if (!club) return null;
+  return latestPro[`${view}|${club}`]?.metrics || null;
 }
 
 const clubLabel = club => CLUBS[club] || 'Schläger unbekannt';
@@ -391,10 +392,11 @@ function updateUI() {
   $('#clip-name').textContent = c.name ? `${c.name}` : '';
   $('#player').classList.toggle('hidden', !c.url);
   $('#trim-label').textContent = c.url ? `Analysebereich ${c.range[0].toFixed(1)}–${c.range[1].toFixed(1)} s` : '';
-  $('#btn-analyse').disabled = analysing || !c.url;
+  $('#btn-analyse').disabled = analysing || !c.url || !c.club;
   $('#btn-analyse').textContent = c.metrics ? 'Erneut analysieren' : 'Schwung analysieren';
   for (const id of ['#btn-trim-start', '#btn-trim-end', '#file-input', '#view-select', '#club-select']) $(id).disabled = analysing;
-  if (!analysing && !c.metrics && c.rawFrames === null) $('#analyse-msg').textContent = c.url ? 'Tipp: Mit „Start hier“ und „Ende hier“ auf Ansprechen bis Finish zuschneiden, das macht die Analyse schneller und genauer.' : '';
+  if (!analysing && c.url && !c.club) $('#analyse-msg').textContent = 'Bitte zuerst den Schläger wählen.';
+  else if (!analysing && !c.metrics && c.rawFrames === null) $('#analyse-msg').textContent = c.url ? 'Tipp: Mit „Start hier“ und „Ende hier“ auf Ansprechen bis Finish zuschneiden, das macht die Analyse schneller und genauer.' : '';
   renderResults();
   syncScrubber();
 }
@@ -411,7 +413,12 @@ let compareU = 0, comparePlaying = false, seekBusy = false, pendingU = null;
 
 function enterCompare() {
   inCompare = true;
-  const ready = clips.me.metrics && clips.pro.metrics;
+  const both = clips.me.metrics && clips.pro.metrics;
+  const sameClub = both && clips.me.club === clips.pro.club;
+  const ready = both && sameClub;
+  $('#compare-empty').textContent = !both
+    ? 'Analysiere zuerst deinen Schwung und einen Pro-Schwung mit demselben Schläger im Tab „Analyse“, am besten in derselben Perspektive.'
+    : `Verglichen werden nur Schwünge mit demselben Schläger. Dein Schwung: ${clubLabel(clips.me.club)}, Pro-Schwung: ${clubLabel(clips.pro.club)}. Lade einen passenden Pro-Schwung hoch oder korrigiere die Schlägerangabe.`;
   $('#compare-empty').classList.toggle('hidden', !!ready);
   $('#compare-body').classList.toggle('hidden', !ready);
   if (!ready) return;
@@ -485,14 +492,14 @@ function fillMetricSelect() {
 
 async function renderHistory() {
   fillMetricSelect();
-  const view = $('#hist-view').value, metricId = $('#hist-metric').value;
+  const view = $('#hist-view').value, metricId = $('#hist-metric').value, club = $('#hist-club').value;
   const metric = METRICS.find(m => m.id === metricId);
-  const entries = (await store.all()).filter(e => e.view === view);
+  const entries = (await store.all()).filter(e => e.view === view && (e.club || 'none') === club);
   const series = entries.filter(e => e.role === 'me' && e.metrics?.[metricId] != null).reverse();
   renderChart(series.map(e => ({ date: new Date(e.date), v: e.metrics[metricId] })), metric);
 
   const ul = $('#hist-list'); ul.innerHTML = '';
-  if (!entries.length) ul.innerHTML = '<li class="muted small">Noch keine gespeicherten Schwünge in dieser Perspektive.</li>';
+  if (!entries.length) ul.innerHTML = '<li class="muted small">Noch keine gespeicherten Schwünge mit dieser Perspektive und diesem Schläger.</li>';
   for (const e of entries) {
     const li = document.createElement('li');
     const date = new Date(e.date).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
@@ -536,7 +543,10 @@ function renderChart(points, metric) {
   </svg>`;
 }
 
+for (const [k, v] of Object.entries(CLUBS)) $('#hist-club').append(new Option(v, k));
+$('#hist-club').append(new Option('Ohne Angabe (ältere Einträge)', 'none'));
 $('#hist-view').addEventListener('change', renderHistory);
+$('#hist-club').addEventListener('change', renderHistory);
 $('#hist-metric').addEventListener('change', renderHistory);
 
 $('#btn-export').addEventListener('click', async () => {
@@ -581,7 +591,7 @@ async function renderPatterns() {
   fillCurveSelect();
   const view = $('#pat-view').value, club = $('#pat-club').value;
   const all = await store.all();
-  const match = e => e.view === view && (club === 'all' || e.club === club);
+  const match = e => e.view === view && e.club === club;
   const pros = all.filter(e => e.role === 'pro' && match(e));
   const mine = all.find(e => e.role === 'me' && match(e)) || null;
 
@@ -688,6 +698,7 @@ for (const b of $$('.tabbar button')) b.addEventListener('click', () => {
   $$('.tab').forEach(s => s.classList.toggle('active', s.id === `tab-${tab}`));
   for (const c of Object.values(clips)) c.video.pause();
   if (tab === 'compare') enterCompare(); else leaveCompare();
+  if (cur().club && (tab === 'history' || tab === 'patterns')) { $('#hist-club').value = cur().club; $('#pat-club').value = cur().club; }
   if (tab === 'history') renderHistory();
   if (tab === 'patterns') renderPatterns();
   window.scrollTo(0, 0);

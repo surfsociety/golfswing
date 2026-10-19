@@ -206,7 +206,7 @@ export function timeAtProgress(frames, phases, u) {
   return keys[seg] + (keys[seg + 1] - keys[seg]) * f;
 }
 
-export const CLUBS = { driver: 'Driver', holz: 'Holz/Hybrid', eisen: 'Eisen', wedge: 'Wedge' };
+export const CLUBS = { driver: 'Driver', eisen: 'Eisen', wedge: 'Wedge' };
 
 export const CURVES = {
   shoulder: { label: 'Schulterdrehung', unit: '°', views: ['faceon', 'dtl'] },

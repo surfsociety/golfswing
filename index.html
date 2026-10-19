@@ -40,7 +40,7 @@
           </label>
           <label class="field">
             <span>Schläger</span>
-            <select id="club-select"></select>
+            <select id="club-select"><option value="">Bitte wählen</option></select>
           </label>
           <label class="btn primary file-btn">
             Video wählen
@@ -98,7 +98,7 @@
 
     <!-- Vergleich -->
     <section id="tab-compare" class="tab">
-      <p id="compare-empty" class="card muted">Analysiere zuerst deinen Schwung und einen Pro-Schwung im Tab „Analyse“, am besten in derselben Perspektive.</p>
+      <p id="compare-empty" class="card muted"></p>
       <div id="compare-body" class="hidden">
         <div id="compare-host" class="compare-grid"></div>
         <div class="card">
@@ -126,6 +126,7 @@
           <label class="field"><span>Perspektive</span>
             <select id="hist-view"><option value="faceon">Face-on</option><option value="dtl">Down-the-line</option></select>
           </label>
+          <label class="field"><span>Schläger</span><select id="hist-club"></select></label>
           <label class="field"><span>Messwert</span><select id="hist-metric"></select></label>
         </div>
         <div id="hist-chart" class="chart"></div>
@@ -146,7 +147,7 @@
             <select id="pat-view"><option value="faceon">Face-on</option><option value="dtl">Down-the-line</option></select>
           </label>
           <label class="field"><span>Schläger</span>
-            <select id="pat-club"><option value="all">Alle Schläger</option></select>
+            <select id="pat-club"></select>
           </label>
         </div>
         <p id="pat-summary" class="small muted"></p>
