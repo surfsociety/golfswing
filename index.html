@@ -38,6 +38,10 @@
               <option value="dtl">Down-the-line (von hinten)</option>
             </select>
           </label>
+          <label class="field">
+            <span>Schläger</span>
+            <select id="club-select"></select>
+          </label>
           <label class="btn primary file-btn">
             Video wählen
             <input id="file-input" type="file" accept="video/*" hidden>
@@ -134,6 +138,40 @@
       <p id="hist-msg" class="small muted"></p>
     </section>
 
+    <!-- Pro-Muster -->
+    <section id="tab-patterns" class="tab">
+      <div class="card">
+        <div class="row">
+          <label class="field"><span>Perspektive</span>
+            <select id="pat-view"><option value="faceon">Face-on</option><option value="dtl">Down-the-line</option></select>
+          </label>
+          <label class="field"><span>Schläger</span>
+            <select id="pat-club"><option value="all">Alle Schläger</option></select>
+          </label>
+        </div>
+        <p id="pat-summary" class="small muted"></p>
+      </div>
+      <div id="pat-body" class="hidden">
+        <div id="pat-insights-card" class="card">
+          <h2>Erkannte Muster</h2>
+          <ul id="pat-insights" class="tips"></ul>
+        </div>
+        <div class="card">
+          <h2>Pro-Korridor</h2>
+          <table class="compare-table">
+            <thead><tr><th>Messwert</th><th>Median</th><th>Korridor</th><th>Du</th></tr></thead>
+            <tbody id="pat-rows"></tbody>
+          </table>
+          <p class="muted small">Korridor = mittlere 50 % aller Pro-Schwünge. „Gemeinsames Prinzip“ heißt, die Pros liegen eng beieinander, „Stilfrage“ heißt, sie streuen stark.</p>
+        </div>
+        <div class="card">
+          <h2>Bewegungsablauf</h2>
+          <select id="pat-curve"></select>
+          <div id="pat-chart" class="chart"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- Einstellungen -->
     <section id="tab-settings" class="tab">
       <div class="card">
@@ -171,6 +209,7 @@
     <button data-tab="analyse" class="active"><span>🎥</span>Analyse</button>
     <button data-tab="compare"><span>⇆</span>Vergleich</button>
     <button data-tab="history"><span>📈</span>Verlauf</button>
+    <button data-tab="patterns"><span>◎</span>Muster</button>
     <button data-tab="settings"><span>⚙︎</span>Einstellungen</button>
   </nav>
 

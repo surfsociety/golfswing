@@ -1,8 +1,9 @@
 import { FilesetResolver, PoseLandmarker } from './vendor/mediapipe/vision_bundle.mjs';
 import {
-  BODY_CONNECTIONS, PHASES, PHASE_LABELS, GOALS, METRICS,
-  sides, prepareFrames, computeSeries, detectPhases, computeMetrics, metricsFor, timeAtProgress,
+  BODY_CONNECTIONS, PHASES, PHASE_LABELS, GOALS, METRICS, CLUBS, CURVES, CURVE_STEPS,
+  sides, prepareFrames, computeSeries, detectPhases, computeMetrics, metricsFor, timeAtProgress, phaseCurves,
 } from './analysis.js';
+import { MIN_PROS, SOLID_PROS, corridor, position, curveBand, sequencing, squareTiming } from './patterns.js';
 import * as store from './storage.js';
 
 const $ = sel => document.querySelector(sel);
@@ -47,7 +48,7 @@ for (const stage of $$('.stage')) {
   const role = stage.dataset.role;
   clips[role] = {
     role, stage, video: stage.querySelector('video'), canvas: stage.querySelector('canvas'), frame: stage.querySelector('.frame'),
-    view: 'faceon', name: '', url: null, W: 0, H: 0, range: [0, 0], step: 1 / 30,
+    view: 'faceon', club: 'driver', name: '', url: null, W: 0, H: 0, range: [0, 0], step: 1 / 30,
     rawFrames: null, frames: null, series: null, phases: null, metrics: null, turns: null,
   };
   stage.dataset.title = role === 'me' ? 'Ich' : 'Pro';
@@ -156,8 +157,9 @@ $('#file-input').addEventListener('change', e => {
 
 function loadFile(clip, file) {
   if (clip.url) URL.revokeObjectURL(clip.url);
-  Object.assign(clip, { url: URL.createObjectURL(file), name: file.name, rawFrames: null, frames: null, series: null, phases: null, metrics: null, turns: null });
+  Object.assign(clip, { url: URL.createObjectURL(file), name: file.name, rawFrames: null, frames: null, series: null, phases: null, metrics: null, turns: null, curves: null, historyId: null });
   clip.view = $('#view-select').value;
+  clip.club = $('#club-select').value;
   clip.video.src = clip.url;
   clip.video.addEventListener('loadedmetadata', async () => {
     // Manche Dateien melden keine Dauer, bis einmal ans Ende gesprungen wurde
@@ -222,7 +224,15 @@ $('#btn-trim-end').addEventListener('click', () => { const c = cur(); c.range[1]
 
 $('#view-select').addEventListener('change', e => {
   const c = cur(); c.view = e.target.value;
-  if (c.series) finalize(c);
+  if (c.series) { try { finalize(c); } catch { /* Meldung beim nächsten Analysieren */ } updateSavedEntry(c); }
+  updateUI();
+});
+
+const clubSel = $('#club-select');
+for (const [k, v] of Object.entries(CLUBS)) clubSel.append(new Option(v, k));
+clubSel.addEventListener('change', e => {
+  const c = cur(); c.club = e.target.value;
+  updateSavedEntry(c);
   updateUI();
 });
 
@@ -279,8 +289,9 @@ function finalize(c) {
     c.phases = detectPhases(c.series);
     const res = computeMetrics(c.series, c.phases, c.view);
     c.metrics = res.metrics; c.turns = res.turns;
+    c.curves = phaseCurves(c.frames, c.phases, c.series, c.turns, c.view);
   } catch (err) {
-    c.phases = null; c.metrics = null; c.turns = null;
+    c.phases = null; c.metrics = null; c.turns = null; c.curves = null;
     throw err;
   }
 }
@@ -298,12 +309,23 @@ async function thumbnail(c) {
 async function saveToHistory(c) {
   const id = (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const entry = {
-    id, date: new Date().toISOString(), role: c.role, view: c.view, handed: settings.handed,
-    name: c.name, metrics: c.metrics, thumb: await thumbnail(c),
+    id, date: new Date().toISOString(), role: c.role, view: c.view, club: c.club, handed: settings.handed,
+    name: c.name, metrics: c.metrics, curves: c.curves, thumb: await thumbnail(c),
   };
   c.historyId = id;
   await store.put(entry);
   await store.requestPersistence();
+  await refreshLatestPro();
+}
+
+// Nachträgliche Änderung von Schläger oder Perspektive auch im gespeicherten Eintrag übernehmen.
+async function updateSavedEntry(c) {
+  if (!c.historyId) return;
+  const entry = (await store.all()).find(e => e.id === c.historyId);
+  if (!entry) return;
+  Object.assign(entry, { view: c.view, club: c.club, metrics: c.metrics, curves: c.curves });
+  await store.put(entry);
+  await refreshLatestPro();
 }
 
 // ---------- Ergebnisse ----------
@@ -312,14 +334,20 @@ const fmt = (v, unit) => (v === null || v === undefined ? '–' : `${v.toLocaleS
 let latestPro = {};
 async function refreshLatestPro() {
   latestPro = {};
-  for (const e of await store.all()) if (e.role === 'pro' && !latestPro[e.view]) latestPro[e.view] = e;
+  for (const e of await store.all()) {
+    if (e.role !== 'pro') continue;
+    latestPro[`${e.view}|${e.club}`] ??= e;
+    latestPro[e.view] ??= e;
+  }
 }
 
-function proMetricsFor(view) {
+function proMetricsFor(view, club) {
   const p = clips.pro;
-  if (p.metrics && p.view === view) return p.metrics;
-  return latestPro[view]?.metrics || null;
+  if (p.metrics && p.view === view && p.club === club) return p.metrics;
+  return (latestPro[`${view}|${club}`] || latestPro[view])?.metrics || null;
 }
+
+const clubLabel = club => CLUBS[club] || 'Schläger unbekannt';
 
 function sortedMetrics(list) {
   const focus = m => m.goals.includes(settings.goal);
@@ -339,7 +367,7 @@ function renderResults() {
     b.addEventListener('click', () => { c.video.pause(); c.video.currentTime = c.frames[c.phases[p]].t; });
     pb.append(b);
   }
-  const pro = c.role === 'me' ? proMetricsFor(c.view) : null;
+  const pro = c.role === 'me' ? proMetricsFor(c.view, c.club) : null;
   const ul = $('#metric-list'); ul.innerHTML = '';
   for (const m of sortedMetrics(metricsFor(c.view))) {
     const li = document.createElement('li');
@@ -359,12 +387,13 @@ function updateUI() {
   }
   if (!inCompare) for (const c2 of Object.values(clips)) c2.stage.classList.toggle('hidden', c2.role !== active);
   $('#view-select').value = c.view;
+  $('#club-select').value = c.club;
   $('#clip-name').textContent = c.name ? `${c.name}` : '';
   $('#player').classList.toggle('hidden', !c.url);
   $('#trim-label').textContent = c.url ? `Analysebereich ${c.range[0].toFixed(1)}–${c.range[1].toFixed(1)} s` : '';
   $('#btn-analyse').disabled = analysing || !c.url;
   $('#btn-analyse').textContent = c.metrics ? 'Erneut analysieren' : 'Schwung analysieren';
-  for (const id of ['#btn-trim-start', '#btn-trim-end', '#file-input', '#view-select']) $(id).disabled = analysing;
+  for (const id of ['#btn-trim-start', '#btn-trim-end', '#file-input', '#view-select', '#club-select']) $(id).disabled = analysing;
   if (!analysing && !c.metrics && c.rawFrames === null) $('#analyse-msg').textContent = c.url ? 'Tipp: Mit „Start hier“ und „Ende hier“ auf Ansprechen bis Finish zuschneiden, das macht die Analyse schneller und genauer.' : '';
   renderResults();
   syncScrubber();
@@ -468,7 +497,7 @@ async function renderHistory() {
     const li = document.createElement('li');
     const date = new Date(e.date).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
     const key = sortedMetrics(metricsFor(e.view)).slice(0, 3).map(m => `${m.label}: ${fmt(e.metrics?.[m.id], m.unit)}`).join(' · ');
-    li.innerHTML = `${e.thumb ? `<img alt="" src="${e.thumb}">` : '<img alt="">'}<div class="meta"><strong>${e.role === 'pro' ? 'Pro-Referenz' : 'Mein Schwung'} · ${date}</strong>${key}</div>`;
+    li.innerHTML = `${e.thumb ? `<img alt="" src="${e.thumb}">` : '<img alt="">'}<div class="meta"><strong>${e.role === 'pro' ? 'Pro-Referenz' : 'Mein Schwung'} · ${clubLabel(e.club)}</strong>${date}<br>${key}</div>`;
     const del = document.createElement('button');
     del.className = 'btn small'; del.textContent = 'Löschen';
     del.addEventListener('click', async () => {
@@ -536,6 +565,108 @@ $('#import-input').addEventListener('change', async e => {
   }
 });
 
+// ---------- Pro-Muster ----------
+const pctOfDownswing = x => (x == null ? '–' : `${Math.round(x * 100)} %`);
+
+for (const [k, v] of Object.entries(CLUBS)) $('#pat-club').append(new Option(v, k));
+
+function fillCurveSelect() {
+  const sel = $('#pat-curve'), prev = sel.value, view = $('#pat-view').value;
+  sel.innerHTML = '';
+  for (const [k, c] of Object.entries(CURVES)) if (c.views.includes(view)) sel.append(new Option(c.label, k));
+  if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+
+async function renderPatterns() {
+  fillCurveSelect();
+  const view = $('#pat-view').value, club = $('#pat-club').value;
+  const all = await store.all();
+  const match = e => e.view === view && (club === 'all' || e.club === club);
+  const pros = all.filter(e => e.role === 'pro' && match(e));
+  const mine = all.find(e => e.role === 'me' && match(e)) || null;
+
+  const n = pros.length;
+  const note = n < MIN_PROS
+    ? `Erst ${n} Pro-Schwung${n === 1 ? '' : 'e'} gespeichert. Muster erscheinen ab ${MIN_PROS}, belastbar werden sie ab etwa ${SOLID_PROS}.`
+    : n < SOLID_PROS
+      ? `${n} Pro-Schwünge. Erste Tendenzen, belastbar wird es ab etwa ${SOLID_PROS}.`
+      : `${n} Pro-Schwünge ausgewertet.`;
+  $('#pat-summary').textContent = `${note}${mine ? ` Verglichen wird mit deinem letzten Schwung vom ${new Date(mine.date).toLocaleDateString('de-DE')}.` : ' Für den Vergleich fehlt noch ein eigener Schwung mit diesem Schläger.'}`;
+  const enough = n >= MIN_PROS;
+  $('#pat-body').classList.toggle('hidden', !enough);
+  if (!enough) return;
+
+  // a) Korridor je Messwert, sortiert: gemeinsame Prinzipien zuerst
+  const order = { eng: 0, mittel: 1, breit: 2 };
+  const rows = metricsFor(view).map(m => ({ m, c: corridor(pros, m) })).filter(r => r.c.p50 != null)
+    .sort((a, b) => order[a.c.spread] - order[b.c.spread]);
+  const tb = $('#pat-rows'); tb.innerHTML = '';
+  for (const { m, c } of rows) {
+    const my = mine?.metrics?.[m.id];
+    const pos = position(my, c);
+    const r1 = v => Math.round(v);
+    const tr = document.createElement('tr');
+    if (m.goals.includes(settings.goal)) tr.className = 'focus';
+    tr.innerHTML = `<td>${m.label}<div class="spread ${c.spread}">${c.spread === 'eng' ? 'gemeinsames Prinzip' : c.spread === 'breit' ? 'Stilfrage' : 'mittlere Streuung'}</div></td>
+      <td>${fmt(r1(c.p50), m.unit)}</td><td>${r1(c.p25) === r1(c.p75) ? fmt(r1(c.p25), m.unit) : `${r1(c.p25)} bis ${fmt(r1(c.p75), m.unit)}`}</td>
+      <td>${fmt(my, m.unit)}${pos ? `<div class="pos ${pos === 'im Korridor' ? 'ok' : 'off'}">${pos}</div>` : ''}</td>`;
+    tb.append(tr);
+  }
+
+  // Abfolge im Abschwung
+  const seq = sequencing(pros);
+  const myHip = squareTiming(mine?.curves?.hip), mySh = squareTiming(mine?.curves?.shoulder);
+  const ins = [];
+  if (seq.counted >= MIN_PROS) {
+    ins.push(`Bei ${seq.hipFirst} von ${seq.counted} Pros ist die Hüfte im Abschwung vor den Schultern zurück auf Ansprechposition.${myHip != null && mySh != null ? ` Bei dir: ${myHip < mySh ? 'ebenfalls Hüfte zuerst' : 'Schultern zuerst, ein mögliches Indiz für einen Abschwung von oben'}.` : ''}`);
+    ins.push(`Hüfte wieder auf Ansprechposition: Pros im Mittel bei ${pctOfDownswing(seq.hipMedian)} des Abschwungs${myHip != null ? `, du bei ${pctOfDownswing(myHip)}` : ''}.`);
+    ins.push(`Schultern wieder auf Ansprechposition: Pros im Mittel bei ${pctOfDownswing(seq.shoulderMedian)} des Abschwungs${mySh != null ? `, du bei ${pctOfDownswing(mySh)}` : ''}.`);
+  }
+  const narrow = rows.filter(r => r.c.spread === 'eng');
+  // Größte Abweichungen relativ zur Pro-Streuung zuerst, höchstens drei
+  const dev = r => { const v = mine?.metrics?.[r.m.id]; if (v == null) return 0; const w = Math.max(2, r.c.p75 - r.c.p25); return v < r.c.p25 ? (r.c.p25 - v) / w : v > r.c.p75 ? (v - r.c.p75) / w : 0; };
+  const offNarrow = narrow.filter(r => dev(r) > 0).sort((a, b) => dev(b) - dev(a)).slice(0, 3);
+  if (offNarrow.length) ins.push(`Bei Werten, die unter Pros eng beieinander liegen, weichst du am deutlichsten hier ab: ${offNarrow.map(r => r.m.label).join(', ')}. Dort lohnt sich Training eher als bei reinen Stilfragen.`);
+  const ul = $('#pat-insights'); ul.innerHTML = '';
+  for (const t of ins) { const li = document.createElement('li'); li.textContent = t; ul.append(li); }
+  $('#pat-insights-card').classList.toggle('hidden', !ins.length);
+
+  // b) Bewegungsablauf als Band
+  const key = $('#pat-curve').value;
+  renderBand(curveBand(pros, key), mine?.curves?.[key], CURVES[key]);
+}
+
+function renderBand(band, mine, def) {
+  const host = $('#pat-chart');
+  if (band.p50 == null) { host.innerHTML = `<p class="muted small">Für diese Kurve gibt es erst ${band.n} Pro-Schwünge mit gespeichertem Verlauf (ab dieser Version werden Verläufe mitgespeichert).</p>`; return; }
+  const W = 340, H = 220, pl = 34, pr = 8, pt = 10, pb = 28;
+  const vals = [...band.p25, ...band.p75, ...(mine || [])];
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (hi - lo < 2) { lo -= 1; hi += 1; }
+  const x = k => pl + (k / CURVE_STEPS) * (W - pl - pr);
+  const y = v => pt + (1 - (v - lo) / (hi - lo)) * (H - pt - pb);
+  const path = arr => arr.map((v, k) => `${k ? 'L' : 'M'}${x(k).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const area = `${path(band.p75)} ${band.p25.map((v, k) => [k, v]).reverse().map(([k, v]) => `L${x(k).toFixed(1)},${y(v).toFixed(1)}`).join(' ')} Z`;
+  const ticks = PHASES.map((p, i) => {
+    const xx = x((i / 3) * CURVE_STEPS);
+    return `<line class="grid" x1="${xx}" y1="${pt}" x2="${xx}" y2="${H - pb}"/><text x="${xx}" y="${H - 10}" text-anchor="${i === 0 ? 'start' : i === 3 ? 'end' : 'middle'}">${PHASE_LABELS[p]}</text>`;
+  }).join('');
+  const zero = lo < 0 && hi > 0 ? `<line class="zero" x1="${pl}" y1="${y(0)}" x2="${W - pr}" y2="${y(0)}"/>` : '';
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${def.label}: Pro-Band und dein Verlauf">
+    ${ticks}${zero}
+    <text x="${pl - 4}" y="${pt + 8}" text-anchor="end">${Math.round(hi)}</text>
+    <text x="${pl - 4}" y="${H - pb}" text-anchor="end">${Math.round(lo)}</text>
+    <path class="band" d="${area}"/>
+    <path class="median" d="${path(band.p50)}"/>
+    ${mine ? `<path class="mine" d="${path(mine)}"/>` : ''}
+  </svg>
+  <div class="legend small"><span class="lg band"></span>Pros, mittlere 50 %<span class="lg median"></span>Pro-Median${mine ? '<span class="lg mine"></span>Du' : ''}</div>`;
+}
+
+$('#pat-view').addEventListener('change', renderPatterns);
+$('#pat-club').addEventListener('change', renderPatterns);
+$('#pat-curve').addEventListener('change', renderPatterns);
+
 // ---------- Einstellungen ----------
 const goalSel = $('#goal-select');
 for (const [k, v] of Object.entries(GOALS)) goalSel.append(new Option(v, k));
@@ -558,6 +689,7 @@ for (const b of $$('.tabbar button')) b.addEventListener('click', () => {
   for (const c of Object.values(clips)) c.video.pause();
   if (tab === 'compare') enterCompare(); else leaveCompare();
   if (tab === 'history') renderHistory();
+  if (tab === 'patterns') renderPatterns();
   window.scrollTo(0, 0);
 });
 

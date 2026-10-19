@@ -42,3 +42,20 @@ console.log('t(u=1.5)=',timeAtProgress(frames,ph,1.5));
 // left-handed mirror: should not crash
 computeMetrics(computeSeries(frames,1000,1000,'left'),ph,'dtl');
 console.log('OK');
+
+// Pro-Muster
+const { phaseCurves } = await import('../analysis.js');
+const { corridor, position, curveBand, sequencing, squareTiming } = await import('../patterns.js');
+const res = computeMetrics(s, ph, 'faceon');
+const curves = phaseCurves(frames, ph, s, res.turns, 'faceon');
+assert.equal(curves.shoulder.length, 61);
+assert.ok(Math.abs(curves.shoulder[20] - 86) < 6, 'shoulder at top');
+const ht = squareTiming(curves.hip), st = squareTiming(curves.shoulder);
+assert.ok(ht != null && st != null && ht < st, 'hip squares before shoulders');
+const pros = [80, 90, 95, 100, 85].map((v, i) => ({ metrics: { shoulderTurnTop: v }, curves }));
+const c = corridor(pros, { id: 'shoulderTurnTop', unit: '°' });
+assert.equal(c.p50, 90); assert.equal(c.spread, 'eng');
+assert.equal(position(70, c), 'darunter'); assert.equal(position(90, c), 'im Korridor');
+assert.equal(curveBand(pros, 'hip').p50.length, 61);
+const sq = sequencing(pros); assert.equal(sq.hipFirst, 5);
+console.log('patterns OK', { ht, st });

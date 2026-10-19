@@ -205,3 +205,38 @@ export function timeAtProgress(frames, phases, u) {
   const f = Math.min(1, Math.max(0, u - seg));
   return keys[seg] + (keys[seg + 1] - keys[seg]) * f;
 }
+
+export const CLUBS = { driver: 'Driver', holz: 'Holz/Hybrid', eisen: 'Eisen', wedge: 'Wedge' };
+
+export const CURVES = {
+  shoulder: { label: 'Schulterdrehung', unit: '°', views: ['faceon', 'dtl'] },
+  hip: { label: 'Hüftdrehung', unit: '°', views: ['faceon', 'dtl'] },
+  xFactor: { label: 'X-Faktor', unit: '°', views: ['faceon', 'dtl'] },
+  elbow: { label: 'Führungsarm', unit: '°', views: ['faceon', 'dtl'] },
+  weight: { label: 'Gewicht vorne', unit: '%', views: ['faceon'] },
+};
+
+export const CURVE_STEPS = 60; // 20 Stützstellen je Phasenabschnitt
+
+// Verläufe über den normierten Schwungfortschritt 0..3 (Ansprechen, Top, Treffmoment, Finish),
+// damit Schwünge unterschiedlicher Länge und Geschwindigkeit vergleichbar werden.
+export function phaseCurves(frames, phases, series, turns, view) {
+  const ts = frames.map(f => f.t);
+  const at = (arr, t) => {
+    let i = 1;
+    while (i < ts.length - 1 && ts[i] < t) i++;
+    const f = ts[i] === ts[i - 1] ? 0 : Math.min(1, Math.max(0, (t - ts[i - 1]) / (ts[i] - ts[i - 1])));
+    return arr[i - 1] + (arr[i] - arr[i - 1]) * f;
+  };
+  const xf = turns.shoulder.map((s, i) => s - turns.hip[i]);
+  const src = { shoulder: turns.shoulder, hip: turns.hip, xFactor: xf, elbow: series.elbow };
+  if (view === 'faceon') src.weight = series.weight.map(w => w * 100);
+  const out = {};
+  for (const [key, arr] of Object.entries(src)) {
+    out[key] = [];
+    for (let k = 0; k <= CURVE_STEPS; k++) {
+      out[key].push(Math.round(at(arr, timeAtProgress(frames, phases, (k / CURVE_STEPS) * 3))));
+    }
+  }
+  return out;
+}

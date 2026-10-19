@@ -1,7 +1,7 @@
 // Offline-Cache: App-Dateien und Pose-Modell werden beim ersten Besuch gespeichert.
-const CACHE = 'golf-swing-v1';
+const CACHE = 'golf-swing-v2';
 const ASSETS = [
-  './', './index.html', './styles.css', './app.js', './analysis.js', './storage.js', './manifest.webmanifest',
+  './', './index.html', './styles.css', './app.js', './analysis.js', './patterns.js', './storage.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
   './vendor/mediapipe/vision_bundle.mjs',
   './vendor/mediapipe/wasm/vision_wasm_internal.js', './vendor/mediapipe/wasm/vision_wasm_internal.wasm',

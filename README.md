@@ -9,6 +9,8 @@ Persönliche Web-App zur Analyse des eigenen Golfschwungs. Läuft komplett im Br
 - Messwerte: Schulter- und Hüftdrehung, X-Faktor, offene Schultern/Hüfte im Treffmoment, Führungsarm-Streckung, Armebene (DTL), Gewichtsverlagerung und Kopfbewegung (Face-on)
 - Vergleich mit selbst hochgeladenem Pro-Schwung, phasensynchron nebeneinander
 - Verlauf auf dem Gerät (IndexedDB, nur Messwerte und Standbild), Diagramm, JSON-Export/Import
+- Schlägertyp je Video (Driver, Holz/Hybrid, Eisen, Wedge)
+- Pro-Muster (Tab „Muster“, ausgelegt auf bis zu 200 Pro-Schwünge): Korridor je Messwert (mittlere 50 %), Einordnung „gemeinsames Prinzip“ vs. „Stilfrage“, Bewegungsverlauf als Band mit eigener Kurve, Abfolge Hüfte vor Schultern im Abschwung. Ab 3 Pro-Schwüngen sichtbar, belastbar ab etwa 10.
 - Einstellbar: Spielhand, Trainingsziel (hebt passende Werte hervor)
 
 ## Technik
