@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Schwunganalyse</title>
+  <meta name="description" content="Golfschwung-Analyse im Browser. Das Video bleibt auf deinem Gerät.">
+  <meta name="theme-color" content="#14532d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Schwung">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Schwunganalyse</h1>
+    <span id="engine-status" class="muted small"></span>
+  </header>
+
+  <main>
+    <!-- Analyse -->
+    <section id="tab-analyse" class="tab active">
+      <div class="segmented" role="tablist" aria-label="Schwung wählen">
+        <button data-role="me" class="seg active">Mein Schwung</button>
+        <button data-role="pro" class="seg">Pro-Schwung</button>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <label class="field">
+            <span>Perspektive</span>
+            <select id="view-select">
+              <option value="faceon">Face-on (frontal)</option>
+              <option value="dtl">Down-the-line (von hinten)</option>
+            </select>
+          </label>
+          <label class="btn primary file-btn">
+            Video wählen
+            <input id="file-input" type="file" accept="video/*" hidden>
+          </label>
+        </div>
+        <p id="clip-name" class="muted small"></p>
+      </div>
+
+      <div id="stage-host" class="stage-host">
+        <div class="stage" data-role="me">
+          <div class="frame"><video playsinline muted preload="auto"></video><canvas></canvas></div>
+          <p class="empty">Noch kein Video. Am besten Zeitlupe, ganzer Körper im Bild, Kamera auf Stativ.</p>
+        </div>
+        <div class="stage hidden" data-role="pro">
+          <div class="frame"><video playsinline muted preload="auto"></video><canvas></canvas></div>
+          <p class="empty">Noch kein Pro-Video. Lade einen Schwung in derselben Perspektive wie deinen hoch.</p>
+        </div>
+      </div>
+
+      <div id="player" class="card hidden">
+        <input id="scrubber" type="range" min="0" max="1000" value="0" step="1" aria-label="Position">
+        <div class="row controls">
+          <button id="btn-prev" class="btn icon" aria-label="Ein Bild zurück">◀︎</button>
+          <button id="btn-play" class="btn icon" aria-label="Abspielen">▶︎</button>
+          <button id="btn-next" class="btn icon" aria-label="Ein Bild vor">▶︎▏</button>
+          <select id="speed" aria-label="Geschwindigkeit">
+            <option value="0.25">0,25×</option>
+            <option value="0.5">0,5×</option>
+            <option value="1" selected>1×</option>
+          </select>
+          <label class="toggle small"><input id="show-skeleton" type="checkbox" checked> Skelett</label>
+        </div>
+        <div class="row trim">
+          <button id="btn-trim-start" class="btn small">Start hier</button>
+          <span id="trim-label" class="muted small"></span>
+          <button id="btn-trim-end" class="btn small">Ende hier</button>
+        </div>
+        <button id="btn-analyse" class="btn primary wide">Schwung analysieren</button>
+        <div id="progress" class="progress hidden"><div></div></div>
+        <p id="analyse-msg" class="small"></p>
+      </div>
+
+      <div id="results" class="hidden">
+        <div class="card">
+          <div class="phase-buttons" id="phase-buttons"></div>
+        </div>
+        <div class="card">
+          <h2>Messwerte <span id="goal-badge" class="badge"></span></h2>
+          <ul id="metric-list" class="metric-list"></ul>
+          <p class="muted small">Drehwinkel sind Schätzungen aus einer einzelnen Kamera (etwa ±10°). Für Trends über Wochen gut geeignet, für absolute Gradzahlen nicht.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Vergleich -->
+    <section id="tab-compare" class="tab">
+      <p id="compare-empty" class="card muted">Analysiere zuerst deinen Schwung und einen Pro-Schwung im Tab „Analyse“, am besten in derselben Perspektive.</p>
+      <div id="compare-body" class="hidden">
+        <div id="compare-host" class="compare-grid"></div>
+        <div class="card">
+          <input id="compare-scrubber" type="range" min="0" max="3000" value="0" step="1" aria-label="Schwungphase">
+          <div class="phase-ticks"><span>Ansprechen</span><span>Top</span><span>Treffmoment</span><span>Finish</span></div>
+          <div class="row controls">
+            <button id="compare-play" class="btn">▶︎ Synchron abspielen</button>
+          </div>
+          <p id="compare-warning" class="warn small hidden"></p>
+        </div>
+        <div class="card">
+          <h2>Ich vs. Pro</h2>
+          <table class="compare-table">
+            <thead><tr><th>Messwert</th><th>Ich</th><th>Pro</th><th>Δ</th></tr></thead>
+            <tbody id="compare-rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Verlauf -->
+    <section id="tab-history" class="tab">
+      <div class="card">
+        <div class="row">
+          <label class="field"><span>Perspektive</span>
+            <select id="hist-view"><option value="faceon">Face-on</option><option value="dtl">Down-the-line</option></select>
+          </label>
+          <label class="field"><span>Messwert</span><select id="hist-metric"></select></label>
+        </div>
+        <div id="hist-chart" class="chart"></div>
+      </div>
+      <ul id="hist-list" class="hist-list"></ul>
+      <div class="card row">
+        <button id="btn-export" class="btn">Backup exportieren</button>
+        <label class="btn file-btn">Backup importieren<input id="import-input" type="file" accept="application/json,.json" hidden></label>
+      </div>
+      <p id="hist-msg" class="small muted"></p>
+    </section>
+
+    <!-- Einstellungen -->
+    <section id="tab-settings" class="tab">
+      <div class="card">
+        <h2>Spielhand</h2>
+        <div class="row">
+          <label class="toggle"><input type="radio" name="handed" value="right" checked> Rechtshänder</label>
+          <label class="toggle"><input type="radio" name="handed" value="left"> Linkshänder</label>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Trainingsziel</h2>
+        <select id="goal-select"></select>
+        <p class="muted small">Die passenden Messwerte werden in der Analyse hervorgehoben und oben einsortiert.</p>
+      </div>
+      <div class="card">
+        <h2>So filmst du richtig</h2>
+        <ul class="tips">
+          <li>Zeitlupe nutzen (iPhone-Kamera „Slo-Mo“), sonst verwischt der Abschwung.</li>
+          <li>Kamera auf Hüfthöhe, auf Stativ, nicht schwenken oder zoomen.</li>
+          <li>Ganzer Körper inklusive Füße und Schläger im Bild, etwas Rand lassen.</li>
+          <li>Face-on: rechtwinklig zur Ziellinie, auf Höhe deiner Brust.</li>
+          <li>Down-the-line: hinter dir, Kamera zeigt Richtung Ziel, auf Höhe deiner Hände.</li>
+          <li>Helles Licht, ruhiger Hintergrund, eng anliegende Kleidung hilft der Erkennung.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>Datenschutz</h2>
+        <p class="small">Die Analyse läuft komplett auf deinem Gerät. Videos werden nirgendwohin hochgeladen und nicht gespeichert, nur Messwerte und ein Standbild pro Schwung.</p>
+        <p class="small muted">Tipp: Über „Teilen → Zum Home-Bildschirm“ in Safari installieren. Dann läuft die App offline und der Verlauf bleibt erhalten.</p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button data-tab="analyse" class="active"><span>🎥</span>Analyse</button>
+    <button data-tab="compare"><span>⇆</span>Vergleich</button>
+    <button data-tab="history"><span>📈</span>Verlauf</button>
+    <button data-tab="settings"><span>⚙︎</span>Einstellungen</button>
+  </nav>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
